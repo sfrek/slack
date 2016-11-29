@@ -1,6 +1,6 @@
 // Copyright 2015 Bowery, Inc.
 
-package slack
+package rest
 
 import (
 	"encoding/json"

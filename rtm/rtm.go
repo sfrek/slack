@@ -1,29 +1,4 @@
-/*
-
-mybot - Illustrative Slack bot in Go
-
-Copyright (c) 2015 RapidLoop
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
-package main
+package rtm
 
 import (
 	"encoding/json"
@@ -37,7 +12,9 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-var slacklog *syslog.Writer
+var (
+	slackrtmlog, _ = syslog.New(syslog.LOG_DAEMON, os.Args[0]+".rtm")
+)
 
 // These two structures represent the response of the Slack API rtm.start.
 // Only some fields are included. The rest are ignored by json.Unmarshal.
@@ -59,12 +36,12 @@ func slackStart(token string) (wsurl, id string, err error) {
 	url := fmt.Sprintf("https://slack.com/api/rtm.start?token=%s", token)
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Err("Authentication Error")
+		slackrtmlog.Err("Authentication Error")
 		return
 	}
 	if resp.StatusCode != 200 {
 		err = fmt.Errorf("API request failed with code %d", resp.StatusCode)
-		log.Err(err.Error())
+		slackrtmlog.Err(err.Error())
 		return
 	}
 	body, err := ioutil.ReadAll(resp.Body)
@@ -108,32 +85,70 @@ type InitialComment map[string]string
 
 // getMessage ...
 // doc: https://api.slack.com/rtm
-func getMessage(ws *websocket.Conn) (m Message, err error) {
+func GetMessage(ws *websocket.Conn) (m Message, err error) {
 	err = websocket.JSON.Receive(ws, &m)
 	return
 }
 
 var counter uint64
 
-func postMessage(ws *websocket.Conn, m Message) error {
+func PostMessage(ws *websocket.Conn, m Message) error {
 	m.Id = atomic.AddUint64(&counter, 1)
 	return websocket.JSON.Send(ws, m)
 }
 
 // Starts a websocket-based Real Time API session and return the websocket
 // and the ID of the (bot-)user whom the token belongs to.
-func slackConnect(token string) (*websocket.Conn, string) {
+func SlackConnect(token string) (*websocket.Conn, string) {
+	slackrtmlog.Info("SlackConnect.in")
 	wsurl, id, err := slackStart(token)
 	if err != nil {
-		slacklog.Err(err.Error())
+		slackrtmlog.Err(fmt.Sprintf("SlackConnect: %s\n%s", id, err.Error()))
 		os.Exit(1)
 	}
 
 	ws, err := websocket.Dial(wsurl, "", "https://api.slack.com/")
 	if err != nil {
-		slacklog.Err(err.Error())
+		slackrtmlog.Err(fmt.Sprintf("SlackConnect: %s\n%s", ws.LocalAddr().String(), err.Error()))
 		os.Exit(1)
 	}
+	slackrtmlog.Info("SlackConnect.return")
 
 	return ws, id
 }
+
+type Client struct {
+	ws *websocket.Conn
+	id string
+}
+
+func NewClient(token string) *Client {
+	slackrtmlog.Info("NewClient")
+	w, i := SlackConnect(token)
+	return &Client{ws: w, id: i}
+}
+
+/*
+
+mybot - Illustrative Slack bot in Go
+
+Copyright (c) 2015 RapidLoop
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/

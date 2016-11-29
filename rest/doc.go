@@ -20,4 +20,4 @@
     }
   }
 */
-package slack
+package rest
